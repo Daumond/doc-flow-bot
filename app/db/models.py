@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
@@ -47,7 +47,13 @@ class Application(Base):
 
     status = Column(Enum(ApplicationStatus), default=ApplicationStatus.created)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    agent = relationship("User", foreign_keys=[agent_id], backref="agent_applications")
+    rop = relationship("User", foreign_keys=[rop_id], backref="rop_applications")
+    lawyer = relationship("User", foreign_keys=[lawyer_id], backref="lawyer_applications")
+    tasks = relationship("Task", back_populates="application", order_by="Task.created_at.desc()")
 
 class QuestionnaireAnswer(Base):
     __tablename__ = "questionnaire_answers"
@@ -68,3 +74,25 @@ class Document(Base):
     sha256 = Column(String, nullable=True)
     meta = Column(Text, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+class Task(Base):
+    __tablename__ = "tasks"
+    
+    id = Column(Integer, primary_key=True)
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    assignee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    status = Column(String(20), default="open")  # open/closed
+    created_at = Column(DateTime, default=datetime.utcnow)
+    closed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    application = relationship("Application", back_populates="tasks")
+    author = relationship("User", foreign_keys=[author_id])
+    assignee = relationship("User", foreign_keys=[assignee_id])
+
+Index('idx_application_status', Application.status)
+Index('idx_document_application', Document.application_id)
+Index('idx_task_application', Task.application_id)
+Index('idx_task_assignee', Task.assignee_id)
