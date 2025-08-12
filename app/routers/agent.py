@@ -6,6 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.models import Application, ApplicationStatus, QuestionnaireAnswer, Document, User, Task
 from app.db.repository import session_scope
 from app.keyboards.common import doc_type_kb
+from app.services import yandex_disk as ya
 from pathlib import Path
 import hashlib
 
@@ -17,19 +18,6 @@ QUESTIONS = [
     ("q01", "Собраны ли оригиналы всех паспортов? (да/нет)"),
     ("q02", "Есть ли свежая выписка ЕГРН? (есть/нет)"),
     ("q03", "Есть обременения? (да/нет)"),
-    ("q04", "Есть несовершеннолетние собственники? (да/нет)"),
-    ("q05", "Есть ли доверенности? (да/нет)"),
-    ("q06", "Согласие супруга(ги) требуется? (да/нет)"),
-    ("q07", "Прописанные лица остаются? (да/нет)"),
-    ("q08", "Маткапитал использовался? (да/нет)"),
-    ("q09", "Ипотека участвует? (да/нет)"),
-    ("q10", "Есть задолженности по коммуналке? (да/нет)"),
-    ("q11", "Все листы договора подписаны? (да/нет)"),
-    ("q12", "Согласованы даты протокола? (да/нет)"),
-    ("q13", "Пакет по продавцу полный? (да/нет)"),
-    ("q14", "Пакет по покупателю полный? (да/нет)"),
-    ("q15", "Нотариус требуется? (да/нет)"),
-    ("q16", "Есть дополнительные документы? (да/нет)"),
 ]
 
 class CreateDeal(StatesGroup):
@@ -94,6 +82,11 @@ async def head_name_handler(message: Message, state: FSMContext):
 @router.message(CreateDeal.agent_name)
 async def agent_name_handler(message: Message, state: FSMContext):
     data = await state.get_data()
+    print(f"[DEBUG] agent_name_handler: data={data}")
+    folder_name = f"{data.get('protocol_date')}-{data.get('deal_type')}-{data.get('contract_no')}"
+    print(f"[DEBUG] agent_name_handler: folder_name={folder_name}")
+    yadisk_path = ya.create_folder(folder_name)
+    print(f"[DEBUG] agent_name_handler: yadisk_path={yadisk_path}")
     # Создаём заявку сразу, чтобы сохранять ответы и файлы в БД по app_id
     with session_scope() as s:
         app = Application(
@@ -105,6 +98,7 @@ async def agent_name_handler(message: Message, state: FSMContext):
             head_name=data.get("head_name"),
             agent_name=message.text.strip(),
             status=ApplicationStatus.created,
+            yandex_folder=yadisk_path
         )
         s.add(app)
         s.flush()  # получаем app.id
@@ -124,7 +118,7 @@ async def ask_next_question(message: Message, state: FSMContext):
         )
     key, text = QUESTIONS[idx]
     await state.set_state(CreateDeal.question_index)
-    await message.answer(f"{idx+1}/16. {text}")
+    await message.answer(f"{idx+1}/3. {text}")
 
 @router.message(CreateDeal.question_index)
 async def save_answer_and_next(message: Message, state: FSMContext):
@@ -154,6 +148,7 @@ async def choose_doc_type(cb: CallbackQuery, state: FSMContext):
 @router.message(CreateDeal.awaiting_file, F.document)
 async def on_document(message: Message, state: FSMContext):
     await _save_incoming_file(message, state, is_photo=False)
+
 
 @router.message(CreateDeal.awaiting_file, F.photo)
 async def on_photo(message: Message, state: FSMContext):
@@ -191,6 +186,9 @@ async def _save_incoming_file(message: Message, state: FSMContext, is_photo: boo
             local_path=str(dest),
             sha256=sha256,
         ))
+        app = s.query(Application).get(app_id)
+        if app and app.yandex_folder:
+            ya.upload_file(app.yandex_folder, str(dest), str(filename))
 
     await message.answer(
         f"Файл сохранён: <code>{filename}</code> Тип: {doc_type.upper()} Ещё выбрать тип:",
@@ -209,7 +207,7 @@ async def finish_upload(cb: CallbackQuery, state: FSMContext):
             if app:
                 app.status = ApplicationStatus.created
     await state.clear()
-    await cb.message.answer("Загрузка завершена ✅. Заявка готова для проверки РОПом.")
+    await cb.message.answer("Загрузка завершена ✅. Заявка передана для проверки РОПом.")
     await cb.answer()
 
 @router.message(F.text == "/my_applications")
@@ -333,7 +331,7 @@ async def agent_edit_application(cb: CallbackQuery, state: FSMContext):
 async def select_field_to_edit(cb: CallbackQuery, state: FSMContext):
     """Handle field selection for editing"""
     if cb.data == "finish_editing":
-        await finish_editing(cb, state)
+        await finish_upload(cb, state)
         return
     
     field_map = {
