@@ -7,6 +7,7 @@ from app.db.models import Application, ApplicationStatus, QuestionnaireAnswer, D
 from app.db.repository import session_scope
 from app.keyboards.common import doc_type_kb
 from app.services import yandex_disk as ya
+from app.services.protocol_filler import fill_protocol
 from pathlib import Path
 import hashlib
 
@@ -137,8 +138,8 @@ async def save_answer_and_next(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("doc_"))
 async def choose_doc_type(cb: CallbackQuery, state: FSMContext):
     if cb.data == "doc_done":
-        await cb.message.answer("Загрузка завершена. Заявка готова для передачи РОП.")
-        return await cb.answer()
+        await finish_upload(cb, state)
+        return
     doc_type = cb.data.replace("doc_", "")
     await state.update_data(current_doc_type=doc_type)
     await state.set_state(CreateDeal.awaiting_file)
@@ -197,17 +198,52 @@ async def _save_incoming_file(message: Message, state: FSMContext, is_photo: boo
     # остаёмся в состоянии awaiting_file до нового выбора
 
 
-@router.callback_query(F.data == "doc_done")
 async def finish_upload(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     app_id = data.get("application_id")
+    public_link = None
     if app_id:
         with session_scope() as s:
             app = s.query(Application).get(app_id)
             if app:
                 app.status = ApplicationStatus.created
+                # Try to get public link if yandex_folder exists
+                if getattr(app, "yandex_folder", None):
+                    public_link = ya.get_public_link(app.yandex_folder)
+                    # Save the public link in the Application if the field exists
+                    if hasattr(app, "yandex_public_url"):
+                        app.yandex_public_url = public_link
+
+    template_path = "./templates/protocol_template.doc"
+    output_path = f"./data/{app_id}/protocol.docx"
+
+    # Собираем данные
+    with session_scope() as s:
+        app = s.query(Application).get(app_id)
+        answers = s.query(QuestionnaireAnswer).filter_by(application_id=app_id).all()
+        data_dict = {
+            "deal_type": app.deal_type or "",
+            "contract_no": app.contract_no or "",
+            "protocol_date": app.protocol_date or "",
+            "address": app.address or "",
+            "object_type": app.object_type or "",
+            "head_name": app.head_name or "",
+            "agent_name": app.agent_name or ""
+        }
+        for ans in answers:
+            data_dict[ans.question_key] = ans.answer_value
+
+    fill_protocol(template_path, output_path, data_dict)
+
+    # Загрузка на Яндекс.Диск
+    if getattr(app, "yandex_folder", None):
+        ya.upload_file(app.yandex_folder, output_path, "protocol.docx")
+
     await state.clear()
-    await cb.message.answer("Загрузка завершена ✅. Заявка передана для проверки РОПом.")
+    msg = "Загрузка завершена ✅. Заявка передана для проверки РОПом."
+    if public_link:
+        msg += f"\n\nСоздана папка в Яндекс.Диске: {public_link}"
+    await cb.message.answer(msg)
     await cb.answer()
 
 @router.message(F.text == "/my_applications")
