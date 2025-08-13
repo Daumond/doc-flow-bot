@@ -16,9 +16,9 @@ from app.services.notifier import Notifier
 router = Router(name="agent")
 
 QUESTIONS = [
-    ("q01", "Собраны ли оригиналы всех паспортов? (да/нет)"),
-    ("q02", "Есть ли свежая выписка ЕГРН? (есть/нет)"),
-    ("q03", "Есть обременения? (да/нет)"),
+    ("q01", "Адрес объекта соответствует расположению по карте, соседним домам и квартирам (да/нет)"),
+    ("q02", "Новорожденные дети без регистрации (проживают / не проживают)"),
+    ("q03", "На Объекте незарегистрированная перепланировка (имеется / отсутствует)"),
 ]
 
 class CreateDeal(StatesGroup):
@@ -215,7 +215,7 @@ async def finish_upload(cb: CallbackQuery, state: FSMContext):
                         app.yandex_public_url = public_link
 
     template_path = "./templates/protocol_template.doc"
-    output_path = f"./data/{app_id}/protocol.docx"
+    output_path = f"./data/{app_id}/protocol.doc"
 
     # Собираем данные
     with session_scope() as s:
