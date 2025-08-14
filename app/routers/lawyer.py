@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.orm import joinedload
 
 from app.db.models import Application, ApplicationStatus, User, Task
@@ -8,6 +9,9 @@ from app.db.repository import session_scope
 from app.services.notifier import Notifier
 
 router = Router(name="lawyer")
+
+class LawyerStates(StatesGroup):
+    task_text = State()
 
 def _lawyer_actions_kb(app_id: int):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -47,10 +51,10 @@ async def lawyer_task(cb: CallbackQuery, state: FSMContext):
     app_id = int(cb.data.split("_")[-1])
     await state.update_data(task_app_id=app_id)
     await cb.message.answer("Введите текст задачи агенту:")
-    await state.set_state("lawyer_task_text")
+    await state.set_state(LawyerStates.task_text)
     await cb.answer()
 
-@router.message(F.state == "lawyer_task_text")
+@router.message(LawyerStates.task_text)
 async def lawyer_task_text(message: Message, state: FSMContext, notifier: Notifier):
     data = await state.get_data()
     app_id = data.get("task_app_id")
@@ -87,12 +91,15 @@ async def lawyer_task_text(message: Message, state: FSMContext, notifier: Notifi
         
         # Отправляем уведомление агенту
         if app.agent_id:
-            await notifier.notify_agent_task_assigned(
-                agent_id=app.agent_id,
-                app_id=app_id,
-                task_text=task_text,
-                lawyer_name=lawyer.full_name or "Юрист"
-            )
+            # Get the agent to access their telegram_id
+            agent = s.query(User).filter(User.id == app.agent_id).first()
+            if agent and agent.telegram_id:
+                await notifier.notify_agent_task_assigned(
+                    agent_id=agent.telegram_id,  # Use telegram_id instead of internal ID
+                    app_id=app_id,
+                    task_text=task_text,
+                    lawyer_name=lawyer.full_name or "Юрист"
+                )
     
     await message.answer(f"✅ Задача агенту сохранена: {task_text}")
     await state.clear()
@@ -108,7 +115,10 @@ async def lawyer_close(cb: CallbackQuery, notifier: Notifier):
             
             # Отправляем уведомление агенту
             if app.agent_id:
-                await notifier.notify_application_closed(app.agent_id, app_id)
+                # Get the agent to access their telegram_id
+                agent = s.query(User).filter(User.id == app.agent_id).first()
+                if agent and agent.telegram_id:
+                    await notifier.notify_application_closed(agent.telegram_id, app_id)
     
     await cb.message.answer("✅ Сделка закрыта")
     await cb.answer()

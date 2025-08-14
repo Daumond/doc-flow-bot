@@ -64,7 +64,9 @@ async def rop_approve(cb: CallbackQuery, notifier: Notifier):
             rop_name = rop_user.full_name if rop_user else "РОП"
             app.rop_id = rop_user.id if rop_user else None
             # Get agent_id safely
-            agent_id = app.agent.telegram_id if app.agent and hasattr(app.agent, 'telegram_id') else None
+            agent = s.query(User).filter(User.id == app.agent_id).first()
+            if agent and agent.telegram_id:
+                agent_id = agent.telegram_id
     
     # Send notification outside the session
     if agent_id:
@@ -108,7 +110,9 @@ async def rop_return_comment(message: Message, state: FSMContext, notifier: Noti
                 rop_user = s.query(User).filter(User.telegram_id == str(message.from_user.id)).first()
                 rop_name = rop_user.full_name if rop_user else "РОП"
                 app.rop_id = rop_user.id if rop_user else None
-                agent_id = app.agent.telegram_id if app.agent and hasattr(app.agent, 'telegram_id') else None
+                agent = s.query(User).filter(User.telegram_id == app.agent.telegram_id).first()
+                if agent and agent.telegram_id:
+                    agent_id = agent.telegram_id
                 print(f"[DEBUG] rop_return_comment: Updated application status to {app.status}, agent_id={agent_id}")
             else:
                 print(f"[ERROR] rop_return_comment: Application {app_id} not found")
