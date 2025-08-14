@@ -16,8 +16,17 @@ class ROPStates(StatesGroup):
 def _rop_actions_kb(app_id: int):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     kb = InlineKeyboardBuilder()
-    kb.button(text="Одобрить → Юристу", callback_data=f"rop_approve_{app_id}")
-    kb.button(text="Вернуть с комментарием", callback_data=f"rop_return_{app_id}")
+    
+    # Add Yandex.Disk button with direct URL if available
+    with session_scope() as s:
+        app = s.get(Application, app_id)
+        if app and app.yandex_public_url:
+            kb.button(text="📁 Яндекс.Диск", url=app.yandex_public_url)
+    
+    # Add other action buttons
+    kb.button(text="✅ Одобрить → Юристу", callback_data=f"rop_approve_{app_id}")
+    kb.button(text="↩️ Вернуть с комментарием", callback_data=f"rop_return_{app_id}")
+    
     kb.adjust(1)
     return kb.as_markup()
 

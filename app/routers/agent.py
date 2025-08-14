@@ -10,6 +10,11 @@ from app.services import yandex_disk as ya
 from app.services.protocol_filler import fill_protocol
 from pathlib import Path
 import hashlib
+import json
+import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.services.notifier import Notifier
 
@@ -54,7 +59,7 @@ async def deal_type_handler(message: Message, state: FSMContext):
 async def contract_no_handler(message: Message, state: FSMContext):
     await state.update_data(contract_no=None if message.text.strip()=="-" else message.text.strip())
     await state.set_state(CreateDeal.protocol_date)
-    await message.answer("Дата подачи протокола (YYYY-MM-DD):")
+    await message.answer("Дата подачи протокола (дд.мм.гггг):")
 
 @router.message(CreateDeal.protocol_date)
 async def protocol_date_handler(message: Message, state: FSMContext):
@@ -83,11 +88,8 @@ async def head_name_handler(message: Message, state: FSMContext):
 @router.message(CreateDeal.agent_name)
 async def agent_name_handler(message: Message, state: FSMContext):
     data = await state.get_data()
-    print(f"[DEBUG] agent_name_handler: data={data}")
     folder_name = f"{data.get('protocol_date')}-{data.get('deal_type')}-{data.get('contract_no')}"
-    print(f"[DEBUG] agent_name_handler: folder_name={folder_name}")
     yadisk_path = ya.create_folder(folder_name)
-    print(f"[DEBUG] agent_name_handler: yadisk_path={yadisk_path}")
     # Создаём заявку сразу, чтобы сохранять ответы и файлы в БД по app_id
     with session_scope() as s:
         app = Application(
@@ -214,8 +216,8 @@ async def finish_upload(cb: CallbackQuery, state: FSMContext):
                     if hasattr(app, "yandex_public_url"):
                         app.yandex_public_url = public_link
 
-    template_path = "./templates/protocol_template.doc"
-    output_path = f"./data/{app_id}/protocol.doc"
+    template_path = "./templates/protocol_template.docx"
+    output_path = f"./data/{app_id}/protocol.docx"
 
     # Собираем данные
     with session_scope() as s:
@@ -494,7 +496,7 @@ async def agent_upload_docs(cb: CallbackQuery, state: FSMContext):
         
         # Set state for document upload
         await state.update_data(upload_app_id=app_id)
-        await state.set_state("upload_additional_docs")
+        await state.set_state(CreateDeal.upload_additional_docs)
         
         await cb.message.answer(
             f"Загрузите дополнительные документы для заявки #{app_id}.\n"
@@ -539,7 +541,7 @@ async def upload_done(cb: CallbackQuery, state: FSMContext, notifier: Notifier):
     await cb.answer()
 
 # Add this handler for document uploads
-@router.message(F.document | F.photo, F.state == "upload_additional_docs")
+@router.message(F.document | F.photo, CreateDeal.upload_additional_docs)
 async def handle_additional_document(message: Message, state: FSMContext):
     """Handle additional document uploads for tasks"""
     data = await state.get_data()
@@ -549,16 +551,65 @@ async def handle_additional_document(message: Message, state: FSMContext):
         await state.clear()
         return await message.answer("Ошибка: не найдена заявка")
     
-    # Get file info
-    if message.document:
-        file_id = message.document.file_id
-        file_name = message.document.file_name or "document"
-    elif message.photo:
-        file_id = message.photo[-1].file_id
-        file_name = f"photo_{file_id}.jpg"
-    else:
-        return await message.answer("Неподдерживаемый тип файла")
-    
-    # Here you would save the file and create a Document record
-    # For now, just acknowledge receipt
-    await message.answer(f"Файл '{file_name}' получен. Вы можете отправить ещё файлы или нажать 'Готово'.")
+    try:
+        # Prepare local directory
+        base = Path("./data") / str(app_id) / "additional"
+        base.mkdir(parents=True, exist_ok=True)
+        
+        # Handle document or photo
+        if message.document:
+            tg_file = message.document
+            file_ext = Path(tg_file.file_name).suffix if tg_file.file_name else ".bin"
+            filename = f"doc_{int(datetime.datetime.utcnow().timestamp())}{file_ext}"
+            dest = base / filename
+            await message.bot.download(tg_file, destination=dest)
+        elif message.photo:
+            tg_file = message.photo[-1]
+            filename = f"photo_{int(datetime.datetime.utcnow().timestamp())}.jpg"
+            dest = base / filename
+            await message.bot.download(tg_file, destination=dest)
+        else:
+            return await message.answer("Неподдерживаемый тип файла")
+        
+        # Calculate file hash
+        file_bytes = dest.read_bytes()
+        sha256 = hashlib.sha256(file_bytes).hexdigest()
+        
+        # Save to database and upload to Yandex.Disk
+        with session_scope() as s:
+            app = s.query(Application).get(app_id)
+            if not app:
+                return await message.answer("Ошибка: заявка не найдена")
+            
+            # Create document record
+            doc = Document(
+                application_id=app_id,
+                doc_type="additional",
+                file_name=filename,
+                local_path=str(dest),
+                yandex_path=f"{app.yandex_folder}/additional/{filename}" if app.yandex_folder else None,
+                sha256=sha256,
+                meta=json.dumps({
+                    "original_name": getattr(message.document, 'file_name', None) or "photo",
+                    "mime_type": getattr(message.document, 'mime_type', 'image/jpeg' if message.photo else 'application/octet-stream'),
+                    "file_size": len(file_bytes),
+                    "uploaded_at": datetime.datetime.utcnow().isoformat()
+                })
+            )
+            s.add(doc)
+            s.flush()  # Get the document ID
+            
+            # Upload to Yandex.Disk if folder is set
+            if app.yandex_folder:
+                try:
+                    remote_path = f"{app.yandex_folder}/additional/{filename}"
+                    ya.upload_file(app.yandex_folder, str(dest), f"additional/{filename}")
+                    doc.yandex_path = remote_path
+                except Exception as e:
+                    logger.error(f"Failed to upload to Yandex.Disk: {str(e)}")
+        
+        await message.answer(f"✅ Файл успешно загружен: {filename}")
+        
+    except Exception as e:
+        logger.error(f"Error processing document: {str(e)}", exc_info=True)
+        await message.answer("Произошла ошибка при обработке файла. Пожалуйста, попробуйте снова.")

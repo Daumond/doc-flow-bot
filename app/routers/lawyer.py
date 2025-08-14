@@ -16,8 +16,17 @@ class LawyerStates(StatesGroup):
 def _lawyer_actions_kb(app_id: int):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     kb = InlineKeyboardBuilder()
-    kb.button(text="Поставить задачу", callback_data=f"lawyer_task_{app_id}")
-    kb.button(text="Закрыть сделку", callback_data=f"lawyer_close_{app_id}")
+    
+    # Add Yandex.Disk button with direct URL if available
+    with session_scope() as s:
+        app = s.get(Application, app_id)
+        if app and app.yandex_public_url:
+            kb.button(text="📁 Яндекс.Диск", url=app.yandex_public_url)
+    
+    # Add other action buttons
+    kb.button(text="📝 Поставить задачу", callback_data=f"lawyer_task_{app_id}")
+    kb.button(text="✅ Закрыть сделку", callback_data=f"lawyer_close_{app_id}")
+    
     kb.adjust(1)
     return kb.as_markup()
 
