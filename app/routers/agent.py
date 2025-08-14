@@ -214,8 +214,8 @@ async def finish_upload(cb: CallbackQuery, state: FSMContext):
                     if hasattr(app, "yandex_public_url"):
                         app.yandex_public_url = public_link
 
-    template_path = "./templates/protocol_template.doc"
-    output_path = f"./data/{app_id}/protocol.doc"
+    template_path = "./templates/protocol_template.docx"
+    output_path = f"./data/{app_id}/protocol.docx"
 
     # Собираем данные
     with session_scope() as s:
@@ -233,11 +233,11 @@ async def finish_upload(cb: CallbackQuery, state: FSMContext):
         for ans in answers:
             data_dict[ans.question_key] = ans.answer_value
 
-    fill_protocol(template_path, output_path, data_dict)
+        fill_protocol(template_path, output_path, data_dict)
 
     # Загрузка на Яндекс.Диск
-    if getattr(app, "yandex_folder", None):
-        ya.upload_file(app.yandex_folder, output_path, "protocol.docx")
+        if getattr(app, "yandex_folder", None):
+            ya.upload_file(app.yandex_folder, output_path, "protocol.docx")
 
     await state.clear()
     msg = "Загрузка завершена ✅. Заявка передана для проверки РОПом."
