@@ -1,11 +1,11 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, ReplyKeyboardRemove
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.models import Application, ApplicationStatus, QuestionnaireAnswer, Document, User, Task
 from app.db.repository import session_scope
-from app.keyboards.common import doc_type_kb
+from app.keyboards.common import doc_type_kb, deal_type_kb
 from app.services import yandex_disk as ya
 from app.services.protocol_filler import fill_protocol
 from pathlib import Path
@@ -45,15 +45,16 @@ class EditApplication(StatesGroup):
     confirm_save = State()
 
 @router.message(F.text == "/new")
+@router.message(F.text == "📝 Новая заявка")
 async def new_application(message: Message, state: FSMContext):
     await state.set_state(CreateDeal.deal_type)
-    await message.answer("Тип сделки (Покупка/Продажа/Альтернатива/Юр.услуги):")
+    await message.answer("Тип сделки (Покупка/Продажа/Альтернатива/Юр.услуги):", reply_markup=deal_type_kb())
 
 @router.message(CreateDeal.deal_type)
 async def deal_type_handler(message: Message, state: FSMContext):
     await state.update_data(deal_type=message.text.strip())
     await state.set_state(CreateDeal.contract_no)
-    await message.answer("Номер договора (или '-' чтобы пропустить):")
+    await message.answer("Номер договора:", reply_markup=ReplyKeyboardRemove())
 
 @router.message(CreateDeal.contract_no)
 async def contract_no_handler(message: Message, state: FSMContext):
@@ -249,6 +250,7 @@ async def finish_upload(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 @router.message(F.text == "/my_applications")
+@router.message(F.text == "📂 Мои заявки")
 async def my_applications(message: Message):
     """Show all applications for the current agent"""
     with session_scope() as s:

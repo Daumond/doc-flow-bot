@@ -4,6 +4,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from app.db.models import User, UserRole
 from app.db.repository import session_scope
+from app.keyboards.common import menu_kb
 
 router = Router(name="common")
 
@@ -43,7 +44,9 @@ async def reg_department(message: Message, state: FSMContext):
         s.add(user)
 
     await state.clear()
-    await message.answer("Готово! Вы зарегистрированы как 'агент'. Команды: /new — создать заявку, /me — профиль")
+    await message.answer(""
+                         "Готово! Вы зарегистрированы как 'агент'. "
+                         "Доступные команды: /new — создать заявку, /me — профиль", reply_markup=menu_kb())
 
 @router.message(F.text == "/me")
 async def cmd_me(message: Message):
@@ -51,7 +54,9 @@ async def cmd_me(message: Message):
         u = s.query(User).filter(User.telegram_id == str(message.from_user.id)).first()
         if not u:
             return await message.answer("Вы не зарегистрированы. Наберите /start")
-        await message.answer(f"\nФИО: {u.full_name}\nОтдел: {u.department_no}\nРоль: {u.role.value}")
+        await message.answer(f"\nФИО: {u.full_name}\n"
+                             f"Отдел: {u.department_no}\n"
+                             f"Роль: {u.role.value}")
 
 
 from aiogram.utils.keyboard import InlineKeyboardBuilder

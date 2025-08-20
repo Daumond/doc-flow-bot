@@ -1,4 +1,4 @@
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 
 
@@ -20,3 +20,17 @@ def doc_type_kb():
     )
     kb.row(InlineKeyboardButton(text="Завершить загрузку", callback_data="doc_done"))
     return kb.as_markup()
+
+def menu_kb():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="📝 Новая заявка")
+    kb.button(text="📂 Мои заявки")
+    kb.adjust(1)
+    return kb.as_markup(resize_keyboard=True)
+
+def deal_type_kb():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="Покупка")
+    kb.button(text="Продажа")
+    kb.adjust(2)
+    return kb.as_markup(resize_keyboard=True)
