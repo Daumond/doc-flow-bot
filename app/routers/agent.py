@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.models import Application, ApplicationStatus, QuestionnaireAnswer, Document, User, Task
 from app.db.repository import session_scope
-from app.keyboards.common import doc_type_kb, deal_type_kb
+from app.keyboards.common import doc_type_kb, deal_type_kb, object_type_kb, review_kb
 from app.services import yandex_disk as ya
 from app.services.protocol_filler import fill_protocol
 from pathlib import Path
@@ -33,7 +33,7 @@ class CreateDeal(StatesGroup):
     address = State()
     object_type = State()
     head_name = State()
-    agent_name = State()
+    review = State()
     question_index = State()
     uploading = State()
     awaiting_file = State()
@@ -72,27 +72,40 @@ async def protocol_date_handler(message: Message, state: FSMContext):
 async def address_handler(message: Message, state: FSMContext):
     await state.update_data(address=message.text.strip())
     await state.set_state(CreateDeal.object_type)
-    await message.answer("Тип объекта (квартира/комната/доля/ЗУ/дом/апартаменты и т.п.):")
+    await message.answer("Тип объекта (квартира/комната/доля/ЗУ/дом/апартаменты):", reply_markup=object_type_kb())
 
 @router.message(CreateDeal.object_type)
 async def object_type_handler(message: Message, state: FSMContext):
     await state.update_data(object_type=message.text.strip())
     await state.set_state(CreateDeal.head_name)
-    await message.answer("ФИО руководителя:")
+    await message.answer("ФИО руководителя:", reply_markup=ReplyKeyboardRemove())
 
 @router.message(CreateDeal.head_name)
 async def head_name_handler(message: Message, state: FSMContext):
     await state.update_data(head_name=message.text.strip())
-    await state.set_state(CreateDeal.agent_name)
-    await message.answer("ФИО сотрудника (ваше ФИО):")
+    await state.set_state(CreateDeal.review)
+    data = await state.get_data()
+    await message.answer(f"Проверьте правильность введённых данных:"
+                         f"\nТип сделки: {data['deal_type']}"
+                         f"\nНомер договора: {data['contract_no']}"
+                         f"\nДата подачи протокола: {data['protocol_date']}"
+                         f"\nАдрес объекта: {data['address']}"
+                         f"\nТип объекта: {data['object_type']}"
+                         f"\nФИО руководителя: {data['head_name']}", reply_markup=review_kb())
 
-@router.message(CreateDeal.agent_name)
+@router.message(CreateDeal.review)
 async def agent_name_handler(message: Message, state: FSMContext):
+    if message.text.strip() != "✅":
+        await message.answer("Отмена создания заявки", reply_markup=ReplyKeyboardRemove())
+        await state.clear()
+        return
+    await message.answer(f"Переходим к протоколу...", reply_markup=ReplyKeyboardRemove())
     data = await state.get_data()
     folder_name = f"{data.get('protocol_date')}-{data.get('deal_type')}-{data.get('contract_no')}"
     yadisk_path = ya.create_folder(folder_name)
     # Создаём заявку сразу, чтобы сохранять ответы и файлы в БД по app_id
     with session_scope() as s:
+        agent = s.query(User).filter(User.telegram_id == message.from_user.id).first()
         app = Application(
             deal_type=data["deal_type"],
             contract_no=data.get("contract_no"),
@@ -100,7 +113,7 @@ async def agent_name_handler(message: Message, state: FSMContext):
             address=data.get("address"),
             object_type=data.get("object_type"),
             head_name=data.get("head_name"),
-            agent_name=message.text.strip(),
+            agent_name=agent.full_name,
             status=ApplicationStatus.created,
             yandex_folder=yadisk_path
         )

@@ -34,3 +34,21 @@ def deal_type_kb():
     kb.button(text="Продажа")
     kb.adjust(2)
     return kb.as_markup(resize_keyboard=True)
+
+def object_type_kb():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="Квартира")
+    kb.button(text="Комната")
+    kb.button(text="Доля")
+    kb.button(text="Дом")
+    kb.button(text="Апартаменты")
+    kb.button(text="ЗУ")
+    kb.adjust(3)
+    return kb.as_markup(resize_keyboard=True)
+
+def review_kb():
+    kb = ReplyKeyboardBuilder()
+    kb.button(text="✅")
+    kb.button(text="❌")
+    kb.adjust(1)
+    return kb.as_markup(resize_keyboard=True)
