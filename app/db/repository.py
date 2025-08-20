@@ -1,112 +1,120 @@
 from contextlib import contextmanager
 from typing import Generator, Optional, Dict, Any
-import logging
 from sqlalchemy.orm import Session
-from sqlalchemy import text, inspect
+from sqlalchemy import text, inspect, event
 from datetime import datetime
 
 from app.db.base import SessionLocal, Base, engine
 from app.db.models import User, Application, Document, Task, QuestionnaireAnswer
+from app.config.logging_config import get_logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Initialize logger
+logger = get_logger(__name__)
 
 # Database schema version (increment this for schema changes)
 SCHEMA_VERSION = 1
+
+# Configure SQLAlchemy engine logging
+echo_logger = get_logger('sqlalchemy.engine')
+
 
 @contextmanager
 def session_scope() -> Generator[Session, None, None]:
     """Provide a transactional scope around a series of operations."""
     session = SessionLocal()
     try:
+        logger.debug("Database session started")
         yield session
         session.commit()
+        logger.debug("Database session committed successfully")
     except Exception as e:
-        logger.error(f"Session rollback due to error: {e}")
+        logger.error(f"Session rollback due to error: {str(e)}", exc_info=True)
         session.rollback()
         raise
     finally:
         session.close()
+        logger.debug("Database session closed")
 
-def get_db_version() -> Optional[int]:
+def get_db_version() -> int:
     """Get the current database schema version."""
-    with session_scope() as session:
-        # Check if version table exists
-        inspector = inspect(engine)
-        if 'alembic_version' in inspector.get_table_names():
-            # Using Alembic for migrations
+    try:
+        with session_scope() as session:
+            # Check if version table exists
+            inspector = inspect(engine)
+            if 'alembic_version' not in inspector.get_table_names():
+                logger.info("Database version table not found, assuming version 0")
+                return 0
+                
             result = session.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
             if result:
-                return int(result[0].split('_')[0])  # Extract numeric version
-        elif 'schema_version' in inspector.get_table_names():
-            # Using our custom versioning
-            result = session.execute(text("SELECT version FROM schema_version LIMIT 1")).fetchone()
-            if result:
-                return result[0]
-    return None
+                version = int(result[0])
+                logger.debug(f"Current database version: {version}")
+                return version
+            return 0
+    except Exception as e:
+        logger.error(f"Error getting database version: {str(e)}")
+        return 0
 
 def verify_schema() -> Dict[str, Any]:
     """Verify the database schema and return status information."""
-    inspector = inspect(engine)
-    result = {
-        'tables_ok': True,
-        'missing_tables': [],
-        'current_version': get_db_version(),
-        'expected_version': SCHEMA_VERSION,
-        'is_up_to_date': False
+    status = {
+        'version': 0,
+        'tables_exist': False,
+        'schema_valid': False,
+        'error': None
     }
     
-    # Check for required tables
-    required_tables = {
-        'users', 'applications', 'documents', 
-        'questionnaire_answers', 'tasks', 'schema_version'
-    }
-    existing_tables = set(inspector.get_table_names())
-    missing_tables = required_tables - existing_tables
-    
-    if missing_tables:
-        result['tables_ok'] = False
-        result['missing_tables'] = list(missing_tables)
-    
-    result['is_up_to_date'] = (
-        result['tables_ok'] and 
-        result['current_version'] is not None and
-        result['current_version'] >= SCHEMA_VERSION
-    )
-    
-    return result
+    try:
+        with session_scope() as session:
+            # Check version
+            status['version'] = get_db_version()
+            
+            # Check if tables exist
+            inspector = inspect(engine)
+            required_tables = ['users', 'applications', 'documents', 'tasks']
+            existing_tables = inspector.get_table_names()
+            
+            status['tables_exist'] = all(table in existing_tables for table in required_tables)
+            status['schema_valid'] = status['version'] >= SCHEMA_VERSION
+            
+            logger.info(f"Database verification: {status}")
+            return status
+            
+    except Exception as e:
+        error_msg = f"Error verifying database schema: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        status['error'] = error_msg
+        return status
 
-def init_db():
+def init_db() -> None:
     """Initialize the database and create all tables if they don't exist."""
-    # Create all tables
-    Base.metadata.create_all(bind=engine)
-    
-    # Create schema version table if it doesn't exist
-    with engine.connect() as conn:
-        conn.execute(text(
-            """
-            CREATE TABLE IF NOT EXISTS schema_version (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                version INTEGER NOT NULL,
-                upgraded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        ))
+    try:
+        logger.info("Initializing database...")
         
-        # Insert initial version if not exists
-        result = conn.execute(text("SELECT version FROM schema_version LIMIT 1")).fetchone()
-        if not result:
-            conn.execute(
-                text("INSERT INTO schema_version (version) VALUES (:version)"),
-                {"version": SCHEMA_VERSION}
-            )
-    
-    logger.info(f"Database initialized with schema version {SCHEMA_VERSION}")
-    
-    # Verify the schema
-    status = verify_schema()
-    if not status['tables_ok']:
-        logger.warning(f"Missing tables: {', '.join(status['missing_tables'])}")
-    
-    return status
+        # Check if tables exist
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        
+        if not existing_tables:
+            logger.info("No existing tables found. Creating all tables...")
+            Base.metadata.create_all(bind=engine)
+            logger.info("All tables created successfully")
+        else:
+            logger.info(f"Found {len(existing_tables)} existing tables")
+            
+        # Verify schema
+        status = verify_schema()
+        
+        if status['error']:
+            logger.error(f"Database verification failed: {status['error']}")
+            raise RuntimeError(f"Database verification failed: {status['error']}")
+            
+        if not status['tables_exist'] or not status['schema_valid']:
+            logger.warning("Database schema is invalid or outdated")
+            # Here you could add schema migration logic if needed
+            
+        logger.info("Database initialization completed successfully")
+        
+    except Exception as e:
+        logger.critical(f"Failed to initialize database: {str(e)}", exc_info=True)
+        raise
