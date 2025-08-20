@@ -13,15 +13,13 @@ router = Router(name="lawyer")
 class LawyerStates(StatesGroup):
     task_text = State()
 
-def _lawyer_actions_kb(app_id: int):
+def _lawyer_actions_kb(app_id: int, yandex_public_url: str):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     kb = InlineKeyboardBuilder()
     
     # Add Yandex.Disk button with direct URL if available
-    with session_scope() as s:
-        app = s.get(Application, app_id)
-        if app and app.yandex_public_url:
-            kb.button(text="📁 Яндекс.Диск", url=app.yandex_public_url)
+    if yandex_public_url:
+            kb.button(text="📁 Яндекс.Диск", url=yandex_public_url)
     
     # Add other action buttons
     kb.button(text="📝 Поставить задачу", callback_data=f"lawyer_task_{app_id}")
@@ -46,7 +44,7 @@ async def list_for_lawyer(message: Message):
                         f"Тип: {app.deal_type}\n"
                         f"Адрес: {app.address}\n"
                         f"Сотрудник: {app.agent_name}"),
-                'reply_markup': _lawyer_actions_kb(app.id)
+                'reply_markup': _lawyer_actions_kb(app.id, app.yandex_public_url)
             }
             messages.append(message_data)
 

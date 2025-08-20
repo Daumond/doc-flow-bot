@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.db.models import Application, ApplicationStatus, QuestionnaireAnswer, Document, User, Task
 from app.db.repository import session_scope
 from app.keyboards.common import doc_type_kb, deal_type_kb, object_type_kb, review_kb
-from app.services import yandex_disk as ya
+from app.services import yandex_disk as ya, notifier
 from app.services.protocol_filler import fill_protocol
 from pathlib import Path
 import hashlib
@@ -101,11 +101,14 @@ async def agent_name_handler(message: Message, state: FSMContext):
         return
     await message.answer(f"Переходим к протоколу...", reply_markup=ReplyKeyboardRemove())
     data = await state.get_data()
-    folder_name = f"{data.get('protocol_date')}-{data.get('deal_type')}-{data.get('contract_no')}"
+    sanitazed_contarct_no = data.get("contract_no").replace("/", ".")
+    folder_name = f"{data.get('protocol_date')}-{data.get('deal_type')}-{sanitazed_contarct_no}"
     yadisk_path = ya.create_folder(folder_name)
     # Создаём заявку сразу, чтобы сохранять ответы и файлы в БД по app_id
     with session_scope() as s:
         agent = s.query(User).filter(User.telegram_id == message.from_user.id).first()
+        # TODO временный костыль на несколько юзеров
+        responsible = s.query(User).filter(User.telegram_id == message.from_user.id).first()
         app = Application(
             deal_type=data["deal_type"],
             contract_no=data.get("contract_no"),
@@ -115,7 +118,10 @@ async def agent_name_handler(message: Message, state: FSMContext):
             head_name=data.get("head_name"),
             agent_name=agent.full_name,
             status=ApplicationStatus.created,
-            yandex_folder=yadisk_path
+            yandex_folder=yadisk_path,
+            agent_id=agent.id,
+            rop_id=responsible.id,
+            lawyer_id=responsible.id
         )
         s.add(app)
         s.flush()  # получаем app.id
@@ -130,7 +136,7 @@ async def ask_next_question(message: Message, state: FSMContext):
     if idx >= len(QUESTIONS):
         await state.set_state(CreateDeal.uploading)
         return await message.answer(
-            "Анкета завершена. Теперь загрузите документы. Выберите тип:",
+            "Протокол заполнен. Теперь загрузите документы. Выберите тип:",
             reply_markup=doc_type_kb()
         )
     key, text = QUESTIONS[idx]
@@ -182,12 +188,12 @@ async def _save_incoming_file(message: Message, state: FSMContext, is_photo: boo
 
     if is_photo:
         tg_file = message.photo[-1]
-        filename = f"{doc_type}_{tg_file.file_unique_id}.jpg"
+        filename = f"{doc_type}.jpg"
         dest = base / filename
         await message.bot.download(tg_file, destination=dest)
     else:
         tg_file = message.document
-        filename = tg_file.file_name or f"{doc_type}_{tg_file.file_unique_id}.bin"
+        filename = tg_file.file_name or f"{doc_type}.bin"
         dest = base / filename
         await message.bot.download(tg_file, destination=dest)
 

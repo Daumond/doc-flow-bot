@@ -13,15 +13,14 @@ router = Router(name="rop")
 class ROPStates(StatesGroup):
     waiting_for_return_comment = State()
 
-def _rop_actions_kb(app_id: int):
+def _rop_actions_kb(app_id: int, yandex_public_url: str):
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     kb = InlineKeyboardBuilder()
     
     # Add Yandex.Disk button with direct URL if available
-    with session_scope() as s:
-        app = s.get(Application, app_id)
-        if app and app.yandex_public_url:
-            kb.button(text="📁 Яндекс.Диск", url=app.yandex_public_url)
+
+    if yandex_public_url:
+            kb.button(text="📁 Яндекс.Диск", url=yandex_public_url)
     
     # Add other action buttons
     kb.button(text="✅ Одобрить → Юристу", callback_data=f"rop_approve_{app_id}")
@@ -41,22 +40,25 @@ async def list_for_rop(message: Message):
         
         if not apps:
             return await message.answer("Нет заявок на проверку.")
-            
         # Prepare all message data while the session is still open
         messages = []
         for app in apps:
-            message_data = {
-                'text': (f"Заявка #{app.id}\n"
-                        f"Тип: {app.deal_type}\n"
-                        f"Адрес: {app.address}\n"
-                        f"Сотрудник: {app.agent_name}"),
-                'reply_markup': _rop_actions_kb(app.id)
+            # Берем данные сразу, пока сессия открыта
+            app_data = {
+                "id": app.id,
+                "deal_type": app.deal_type,
+                "address": app.address,
+                "agent_name": app.agent_name,
+                "kb": _rop_actions_kb(app.id, app.yandex_public_url)
             }
-            messages.append(message_data)
-    
-    # Now send all messages outside the session
-    for msg in messages:
-        await message.answer(text=msg['text'], reply_markup=msg['reply_markup'])
+            messages.append(app_data)
+
+        for app_data in messages:
+            text = (f"Заявка #{app_data['id']}\n"
+                    f"Тип: {app_data['deal_type']}\n"
+                    f"Адрес: {app_data['address']}\n"
+                    f"Сотрудник: {app_data['agent_name']}")
+            await message.answer(text=text, reply_markup=app_data["kb"])
 
 @router.callback_query(F.data.startswith("rop_approve_"))
 async def rop_approve(cb: CallbackQuery, notifier: Notifier):

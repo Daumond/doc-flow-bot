@@ -25,6 +25,19 @@ class Notifier:
             logger.error(f"Failed to send notification to {user_id}: {e}")
             return False
 
+    async def notify_rop_application_created(
+        self,
+        agent_name: str,
+        app_id: int
+    ) -> bool:
+        """Notify rop that a new application was created"""
+        text = (
+            f"📋 *Новая заявка #{app_id}*\n\n"
+            f"Автор: {agent_name}\n\n"
+        )
+        return await self.notify_user(agent_name, text)
+
+
     async def notify_agent_application_returned(
         self,
         agent_id: int,
