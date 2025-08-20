@@ -21,9 +21,9 @@ from app.services.notifier import Notifier
 router = Router(name="agent")
 
 QUESTIONS = [
-    ("q01", "Адрес объекта соответствует расположению по карте, соседним домам и квартирам (да/нет)"),
-    ("q02", "Новорожденные дети без регистрации (проживают / не проживают)"),
-    ("q03", "На Объекте незарегистрированная перепланировка (имеется / отсутствует)"),
+    ("q01", "Адрес объекта соответствует расположению по карте, соседним домам и квартирам?", ["да", "нет"]),
+    ("q02", "Новорожденные дети без регистрации?", ["проживают", "не проживают"]),
+    ("q03", "На Объекте незарегистрированная перепланировка?", ["имеется", "отсутствует"]),
 ]
 
 class CreateDeal(StatesGroup):
@@ -130,6 +130,8 @@ async def agent_name_handler(message: Message, state: FSMContext):
     await state.update_data(question_index=0)
     await ask_next_question(message, state)
 
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
 async def ask_next_question(message: Message, state: FSMContext):
     data = await state.get_data()
     idx = data.get("question_index", 0)
@@ -139,16 +141,21 @@ async def ask_next_question(message: Message, state: FSMContext):
             "Протокол заполнен. Теперь загрузите документы. Выберите тип:",
             reply_markup=doc_type_kb()
         )
-    key, text = QUESTIONS[idx]
+    key, text, options = QUESTIONS[idx]
     await state.set_state(CreateDeal.question_index)
-    await message.answer(f"{idx+1}/3. {text}")
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=opt)] for opt in options],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer(f"{idx+1}/3. {text}", reply_markup=keyboard)
 
 @router.message(CreateDeal.question_index)
 async def save_answer_and_next(message: Message, state: FSMContext):
     data = await state.get_data()
     idx = data.get("question_index", 0)
     app_id = data["application_id"]
-    key, _ = QUESTIONS[idx]
+    key, _, _ = QUESTIONS[idx]
     answer = message.text.strip()
     with session_scope() as s:
         s.add(QuestionnaireAnswer(application_id=app_id, question_key=key, answer_value=answer))
