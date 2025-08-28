@@ -228,15 +228,46 @@ async def save_answer_and_next(message: Message, state: FSMContext):
         app_id = data["application_id"]
         key, _, _ = QUESTIONS[idx]
         answer = message.text.strip()
-        with session_scope() as s:
-            s.add(QuestionnaireAnswer(application_id=app_id, question_key=key, answer_value=answer))
+        
+        # Special handling for question 11 (two numbers input)
+        if key == "q11":
+            # Try to split by space or comma
+            numbers = answer.replace(',', ' ').split()
+            if len(numbers) >= 2 and all(num.isdigit() for num in numbers[:2]):
+                total, minors = numbers[:2]
+                with session_scope() as s:
+                    # Save total registered people
+                    s.add(QuestionnaireAnswer(
+                        application_id=app_id, 
+                        question_key="q11_1",
+                        answer_value=total
+                    ))
+                    # Save number of minors
+                    s.add(QuestionnaireAnswer(
+                        application_id=app_id, 
+                        question_key="q11_2",
+                        answer_value=minors
+                    ))
+            else:
+                await message.answer(
+                    "Пожалуйста, введите два числа через пробел или запятую: "
+                    "общее число зарегистрированных и число несовершеннолетних"
+                )
+                return
+        else:
+            # Normal question processing
+            with session_scope() as s:
+                s.add(QuestionnaireAnswer(
+                    application_id=app_id, 
+                    question_key=key, 
+                    answer_value=answer
+                ))
+        
         await state.update_data(question_index=idx+1)
         await ask_next_question(message, state)
     except Exception as e:
         logger.error(f"Error in save_answer_and_next: {e}")
         await message.answer("Ошибка при обработке ответов. Пожалуйста, попробуйте снова.")
-
-# ====== ЗАГРУЗКА ДОКУМЕНТОВ ======
 
 @router.callback_query(F.data.startswith("doc_"))
 async def choose_doc_type(cb: CallbackQuery, state: FSMContext):
