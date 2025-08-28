@@ -8,46 +8,27 @@ from app.config.logging_config import get_logger
 # Initialize logger
 logger = get_logger(__name__)
 
-def replace_text_in_paragraphs(paragraphs, data: Dict[str, Any]) -> int:
-    """Helper to replace text in document paragraphs while preserving formatting"""
+
+def replace_placeholders(paragraphs, data: Dict[str, Any]) -> int:
     replacements = 0
     for p in paragraphs:
-        full_text = ''.join(run.text for run in p.runs)
-        new_text = full_text
         for key, value in data.items():
             marker = f"{{{{{key}}}}}"
-            if marker in new_text:
-                new_text = new_text.replace(marker, str(value))
-        if new_text != full_text:
-            replacements += 1
-            # Clear all runs and add new text in a single run to preserve formatting as much as possible
-            # To preserve formatting better, we replace text in runs proportionally
-            # But here we replace all text in the first run and clear others
-            if p.runs:
-                p.runs[0].text = new_text
-                for run in p.runs[1:]:
-                    run.text = ''
-    return replacements
-
-def replace_text_in_tables(tables, data: Dict[str, Any]) -> int:
-    """Helper to replace text in tables while preserving formatting"""
-    replacements = 0
-    for table in tables:
-        for row in table.rows:
-            for cell in row.cells:
-                for p in cell.paragraphs:
-                    full_text = ''.join(run.text for run in p.runs)
-                    new_text = full_text
-                    for key, value in data.items():
-                        marker = f"{{{{{key}}}}}"
-                        if marker in new_text:
-                            new_text = new_text.replace(marker, str(value))
-                    if new_text != full_text:
-                        replacements += 1
-                        if p.runs:
-                            p.runs[0].text = new_text
-                            for run in p.runs[1:]:
-                                run.text = ''
+            if marker in p.text:
+                parts = p.text.split(marker)
+                p.clear()
+                # текст до маркера — обычный
+                if parts[0]:
+                    p.add_run(parts[0])
+                # сам ответ — жирный и курсив
+                ans = p.add_run(str(value))
+                ans.bold = True
+                ans.italic = True
+                # текст после маркера — обычный
+                if len(parts) > 1 and parts[1]:
+                    p.add_run(parts[1])
+                replacements += 1
+                break
     return replacements
 
 def fill_protocol(template_path: str, output_path: str, data: Dict[str, Any]) -> bool:
@@ -90,12 +71,15 @@ def fill_protocol(template_path: str, output_path: str, data: Dict[str, Any]) ->
         total_replacements = 0
 
         # Replace in paragraphs
-        para_replacements = replace_text_in_paragraphs(doc.paragraphs, data)
+        para_replacements = replace_placeholders(doc.paragraphs, data)
         total_replacements += para_replacements
         logger.debug(f"Made {para_replacements} replacements in paragraphs")
 
-        # Replace in tables
-        table_replacements = replace_text_in_tables(doc.tables, data)
+        table_replacements = 0
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    table_replacements += replace_placeholders(cell.paragraphs, data)
         total_replacements += table_replacements
         logger.debug(f"Made {table_replacements} replacements in tables")
         
