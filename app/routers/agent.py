@@ -733,7 +733,7 @@ async def handle_additional_document(message: Message, state: FSMContext):
             if app.yandex_folder:
                 try:
                     remote_path = f"{app.yandex_folder}/additional/{filename}"
-                    ya.upload_file(app.yandex_folder, str(dest), f"additional/{filename}")
+                    ya.upload_file(app.yandex_folder, str(dest), f"{filename}")
                     doc.yandex_path = remote_path
                 except Exception as e:
                     logger.error(f"Failed to upload to Yandex.Disk: {str(e)}")
