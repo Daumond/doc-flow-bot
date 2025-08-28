@@ -195,12 +195,18 @@ async def agent_name_handler(message: Message, state: FSMContext):
         await message.answer("Ошибка при обработке. Пожалуйста, попробуйте снова.")
 
 async def ask_next_question(message: Message, state: FSMContext):
+    """Ask the next question or proceed to document upload if all questions are done"""
     data = await state.get_data()
     idx = data.get("question_index", 0)
     if idx >= len(QUESTIONS):
         await state.set_state(CreateDeal.uploading)
+        # Remove the keyboard by sending a message with ReplyKeyboardRemove
+        await message.answer(
+            "Протокол заполнен. Теперь загрузите документы.",
+            reply_markup=ReplyKeyboardRemove()
+        )
         return await message.answer(
-            "Протокол заполнен. Теперь загрузите документы. Выберите тип:",
+            "Выберите тип документа:",
             reply_markup=doc_type_kb()
         )
     key, text, options = QUESTIONS[idx]
