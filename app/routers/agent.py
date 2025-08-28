@@ -148,7 +148,7 @@ async def ask_next_question(message: Message, state: FSMContext):
         resize_keyboard=True,
         one_time_keyboard=True
     )
-    await message.answer(f"{idx+1}/3. {text}", reply_markup=keyboard)
+    await message.answer(f"{idx+1}/{len(idx)+1}. {text}", reply_markup=keyboard)
 
 @router.message(CreateDeal.question_index)
 async def save_answer_and_next(message: Message, state: FSMContext):
