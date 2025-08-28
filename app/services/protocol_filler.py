@@ -47,17 +47,32 @@ def fill_protocol(template_path: str, output_path: str, data: Dict[str, Any]) ->
             """Helper to replace text in document paragraphs"""
             replacements = 0
             for p in paragraphs:
+                # First, check if any markers exist in the full paragraph text
+                full_text = ''.join(run.text for run in p.runs)
+                
                 for key, value in data.items():
                     marker = f"{{{{{key}}}}}"
-                    if marker in p.text:
-                        logger.debug(f"Replacing marker: {marker} with value")
-                        inline = p.runs
-                        for i in range(len(inline)):
-                            if marker in inline[i].text:
-                                inline[i].text = inline[i].text.replace(marker, str(value))
-                                replacements += 1
+                    if marker not in full_text:
+                        continue
+                        
+                    # If we get here, the marker exists in this paragraph
+                    logger.debug(f"Replacing marker: {marker} with value")
+                    
+                    # Process each run to find and replace the marker while preserving formatting
+                    for run in p.runs:
+                        if marker in run.text:
+                            # Store original formatting
+                            original_text = run.text
+                            
+                            # Replace only the marker, keep the rest of the text
+                            run.text = original_text.replace(marker, str(value))
+                            
+                            replacements += 1
+                            logger.debug(f"Replaced {marker} in paragraph")
+                            break
+            
             return replacements
-        
+
         # Process document content
         logger.debug("Processing document content")
         total_replacements = 0
@@ -72,14 +87,27 @@ def fill_protocol(template_path: str, output_path: str, data: Dict[str, Any]) ->
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
+                    # Process each paragraph in the cell
                     for paragraph in cell.paragraphs:
+                        full_text = ''.join(run.text for run in paragraph.runs)
+                        
                         for key, value in data.items():
                             marker = f"{{{{{key}}}}}"
-                            if marker in paragraph.text:
-                                for run in paragraph.runs:
-                                    if marker in run.text:
-                                        run.text = run.text.replace(marker, str(value))
-                                        table_replacements += 1
+                            if marker not in full_text:
+                                continue
+                                
+                            # Process each run to find and replace the marker
+                            for run in paragraph.runs:
+                                if marker in run.text:
+                                    # Store original formatting
+                                    original_text = run.text
+                                    
+                                    # Replace only the marker, keep the rest of the text
+                                    run.text = original_text.replace(marker, str(value))
+                                    
+                                    table_replacements += 1
+                                    logger.debug(f"Replaced {marker} in table cell")
+                                    break
         
         total_replacements += table_replacements
         logger.debug(f"Made {table_replacements} replacements in tables")
