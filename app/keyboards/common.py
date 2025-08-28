@@ -25,13 +25,15 @@ def menu_kb():
     kb = ReplyKeyboardBuilder()
     kb.button(text="📝 Новая заявка")
     kb.button(text="📂 Мои заявки")
-    kb.adjust(1)
+    kb.adjust(2)
     return kb.as_markup(resize_keyboard=True)
 
 def deal_type_kb():
     kb = ReplyKeyboardBuilder()
     kb.button(text="Покупка")
     kb.button(text="Продажа")
+    kb.button(text="Альтернатива")
+    kb.button(text="Юр. услуги")
     kb.adjust(2)
     return kb.as_markup(resize_keyboard=True)
 

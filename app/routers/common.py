@@ -28,7 +28,7 @@ async def cmd_start(message: Message, state: FSMContext):
             u = s.query(User).filter(User.telegram_id == str(message.from_user.id)).first()
             if u:
                 logger.info(f"User {message.from_user.id} is already registered")
-                return await message.answer("Вы уже зарегистрированы. Доступны команды: /new, /me")
+                return await message.answer("Вы уже зарегистрированы. Доступны команды: /new, /me", reply_markup=menu_kb() )
         
         await state.set_state(Reg.ask_fullname)
         await message.answer("Привет! Введите ваше ФИО для регистрации:")
@@ -91,7 +91,7 @@ async def cmd_me(message: Message):
                 return await message.answer("Вы не зарегистрированы. Наберите /start")
             await message.answer(f"\nФИО: {u.full_name}\n"
                                  f"Отдел: {u.department_no}\n"
-                                 f"Роль: {u.role.value}")
+                                 f"Роль: {u.role.value}", reply_markup=menu_kb())
             logger.debug(f"User {message.from_user.id} profile retrieved")
     except Exception as e:
         logger.error(f"Error in cmd_me for user {message.from_user.id}: {str(e)}")
