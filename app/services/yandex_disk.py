@@ -2,7 +2,7 @@ import os
 import requests
 
 YADISK_API_URL = "https://cloud-api.yandex.net/v1/disk"
-YADISK_TOKEN = os.getenv("YADISK_TOKEN")  # храним токен в .env
+YADISK_TOKEN = os.getenv("YANDEX_DISK_TOKEN")  # храним токен в .env
 
 HEADERS = {
     "Authorization": f"OAuth {YADISK_TOKEN}"
