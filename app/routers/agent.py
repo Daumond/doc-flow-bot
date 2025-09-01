@@ -466,8 +466,8 @@ async def my_applications(message: Message):
                     kb.button(text=f"#{app.id} - Доработать", callback_data=f"agent_edit_{app.id}")
                 elif app.status == ApplicationStatus.lawyer_task:
                     kb.button(text=f"#{app.id} - Загрузить документы", callback_data=f"agent_upload_{app.id}")
-                else:
-                    kb.button(text=f"#{app.id} - Подробнее", callback_data=f"agent_view_{app.id}")
+                #else:
+                #    kb.button(text=f"#{app.id} - Подробнее", callback_data=f"agent_view_{app.id}")
             
             kb.adjust(1)
             await message.answer(text, reply_markup=kb.as_markup())
