@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, Any
 from docx import Document
 from app.config.logging_config import get_logger
+import re
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -11,24 +12,62 @@ logger = get_logger(__name__)
 
 def replace_placeholders(paragraphs, data: Dict[str, Any]) -> int:
     replacements = 0
+    pattern = re.compile(r"\{\{(\w+)\}\}")
     for p in paragraphs:
-        for key, value in data.items():
-            marker = f"{{{{{key}}}}}"
-            if marker in p.text:
-                parts = p.text.split(marker)
-                p.clear()
-                # текст до маркера — обычный
-                if parts[0]:
-                    p.add_run(parts[0])
-                # сам ответ — жирный и курсив
-                ans = p.add_run(str(value))
+        text = p.text
+        matches = list(pattern.finditer(text))
+        if not matches:
+            continue
+        p.clear()
+        last_index = 0
+        for match in matches:
+            start, end = match.span()
+            key = match.group(1)
+            # Add text before marker
+            if start > last_index:
+                p.add_run(text[last_index:start])
+            # Add replacement with bold and italic if key in data
+            if key in data:
+                ans = p.add_run(str(data[key]))
                 ans.bold = True
                 ans.italic = True
-                # текст после маркера — обычный
-                if len(parts) > 1 and parts[1]:
-                    p.add_run(parts[1])
                 replacements += 1
-                break
+            else:
+                # If key not in data, add original marker text
+                p.add_run(match.group(0))
+            last_index = end
+        # Add remaining text after last marker
+        if last_index < len(text):
+            p.add_run(text[last_index:])
+    return replacements
+
+def replace_placeholders_in_tables(paragraphs, data: Dict[str, Any]) -> int:
+    replacements = 0
+    pattern = re.compile(r"\{\{(\w+)\}\}")
+    for p in paragraphs:
+        text = p.text
+        matches = list(pattern.finditer(text))
+        if not matches:
+            continue
+        p.clear()
+        last_index = 0
+        for match in matches:
+            start, end = match.span()
+            key = match.group(1)
+            # Add text before marker
+            if start > last_index:
+                p.add_run(text[last_index:start])
+            # Add replacement without bold and italic if key in data
+            if key in data:
+                p.add_run(str(data[key]))
+                replacements += 1
+            else:
+                # If key not in data, add original marker text
+                p.add_run(match.group(0))
+            last_index = end
+        # Add remaining text after last marker
+        if last_index < len(text):
+            p.add_run(text[last_index:])
     return replacements
 
 def fill_protocol(template_path: str, output_path: str, data: Dict[str, Any]) -> bool:
@@ -79,7 +118,7 @@ def fill_protocol(template_path: str, output_path: str, data: Dict[str, Any]) ->
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    table_replacements += replace_placeholders(cell.paragraphs, data)
+                    table_replacements += replace_placeholders_in_tables(cell.paragraphs, data)
         total_replacements += table_replacements
         logger.debug(f"Made {table_replacements} replacements in tables")
         
