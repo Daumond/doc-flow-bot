@@ -12,7 +12,7 @@ from app.config.logging_config import get_logger
 logger = get_logger(__name__)
 
 # Database schema version (increment this for schema changes)
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 0
 
 # Configure SQLAlchemy engine logging
 echo_logger = get_logger('sqlalchemy.engine')

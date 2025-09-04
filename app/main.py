@@ -5,12 +5,14 @@ from aiogram.enums import ParseMode
 
 from app.config.config import settings
 from app.config.logging_config import get_logger
+from app.db.models import UserRole
 from app.db.repository import init_db
 from app.routers.common import router as common_router
 from app.routers.agent import router as agent_router
 from app.routers.rop import router as rop_router
 from app.routers.lawyer import router as lawyer_router
 from app.services.notifier import Notifier
+from app.utils.role_guard import AccessGuard, RoleMiddleware
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -35,6 +37,18 @@ async def main():
         
         # Include routers
         logger.info("Setting up routers...")
+        # Базовый middleware для защиты всех хендлеров
+        dp.message.middleware(AccessGuard())
+        dp.callback_query.middleware(AccessGuard())
+
+        # Роутер для команд РОПа
+        rop_router.message.middleware(RoleMiddleware([UserRole.rop]))
+        rop_router.callback_query.middleware(RoleMiddleware([UserRole.rop]))
+
+        # Роутер для команд юриста
+        lawyer_router.message.middleware(RoleMiddleware([UserRole.lawyer]))
+        lawyer_router.callback_query.middleware(RoleMiddleware([UserRole.lawyer]))
+
         dp.include_router(common_router)
         dp.include_router(agent_router)
         dp.include_router(rop_router)

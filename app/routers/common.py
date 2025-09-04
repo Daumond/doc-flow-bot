@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -9,6 +9,7 @@ from app.db.models import User, UserRole
 from app.db.repository import session_scope
 from app.keyboards.common import menu_kb
 from app.config.logging_config import get_logger
+from app.routers.rop import notify_rop_about_registration
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -28,7 +29,8 @@ async def cmd_start(message: Message, state: FSMContext):
             u = s.query(User).filter(User.telegram_id == str(message.from_user.id)).first()
             if u:
                 logger.info(f"User {message.from_user.id} is already registered")
-                return await message.answer("Вы уже зарегистрированы. Доступны команды: /new, /me", reply_markup=menu_kb() )
+                return await message.answer("Вы уже зарегистрированы. "
+                                            "Для редактирования информации используйте /me", reply_markup=menu_kb() )
         
         await state.set_state(Reg.ask_fullname)
         await message.answer("Привет! Введите ваше ФИО для регистрации:")
@@ -48,7 +50,7 @@ async def reg_fullname(message: Message, state: FSMContext):
             
         await state.update_data(full_name=full_name)
         await state.set_state(Reg.ask_department)
-        await message.answer("Укажите номер отдела (можно пропустить, отправив '-' ):")
+        await message.answer("Укажите номер отдела:")
         logger.debug(f"User {message.from_user.id} provided fullname")
     except Exception as e:
         logger.error(f"Error in reg_fullname for user {message.from_user.id}: {str(e)}")
@@ -62,20 +64,39 @@ async def reg_department(message: Message, state: FSMContext):
         data = await state.get_data()
 
         with session_scope() as s:
-            # По умолчанию всем даём роль 'agent' (потом админом меняем)
+            # Создаём пользователя со статусом "на проверке"
             user = User(
                 telegram_id=str(message.from_user.id),
                 full_name=data["full_name"],
                 department_no=dep,
                 role=UserRole.agent,
+                is_active=False,
+                is_approved=False
             )
             s.add(user)
+            s.flush()  # получаем user.id
+
+            # Ищем РОПа для отдела
+            rop_tg = s.query(User).filter(
+                User.role == UserRole.rop,
+                User.department_no == dep,
+                User.is_active == True,
+                User.is_approved == True
+            ).first()
+
+        # Уведомление РОПа (если есть)
+        if rop_tg:
+            await notify_rop_about_registration(message.bot, rop_tg.telegram_id, user)
+        else:
+            logger.warning(f"Не найден активный РОП для отдела {dep}")
 
         await state.clear()
-        await message.answer(""
-                             "Готово! Вы зарегистрированы как 'агент'. "
-                             "Доступные команды: /new — создать заявку, /me — профиль", reply_markup=menu_kb())
-        logger.info(f"User {message.from_user.id} registered successfully")
+        await message.answer(
+            "Заявка на регистрацию отправлена РОПу указанного отдела. "
+            "Ожидайте подтверждения.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        logger.info(f"User {message.from_user.id} registered, notification sent to ROP")
     except Exception as e:
         logger.error(f"Error in reg_department for user {message.from_user.id}: {str(e)}")
         await message.answer("Произошла ошибка. Пожалуйста, попробуйте позже.")

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text, Index
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Text, Index, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
@@ -18,6 +18,8 @@ class User(Base):
     department_no = Column(String, nullable=True)
     role = Column(Enum(UserRole), nullable=False, default=UserRole.agent)
     created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=False)
+    is_approved = Column(Boolean, default=False)
 
 class ApplicationStatus(str, enum.Enum):
     created = "CREATED"

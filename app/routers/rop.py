@@ -1,14 +1,17 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.orm import joinedload
 from app.db.models import Application, ApplicationStatus, User
 from app.db.repository import session_scope
+from app.keyboards.common import menu_kb
 from app.services.notifier import Notifier
+from app.config.logging_config import get_logger
 
 router = Router(name="rop")
+logger = get_logger(__name__)
 
 class ROPStates(StatesGroup):
     waiting_for_return_comment = State()
@@ -144,3 +147,75 @@ async def rop_return_comment(message: Message, state: FSMContext, notifier: Noti
     finally:
         await state.clear()
         print("[DEBUG] rop_return_comment: State cleared")
+
+
+async def notify_rop_about_registration(bot, rop_id: int, user: User):
+    """Отправка уведомления РОПу о новой регистрации"""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="✅ Принять",
+                callback_data=f"approve_user_{user.id}"
+            ),
+            InlineKeyboardButton(
+                text="❌ Отклонить",
+                callback_data=f"reject_user_{user.id}"
+            )
+        ]
+    ])
+
+    text = (
+        f"📋 *Новая заявка на регистрацию*\n\n"
+        f"👤 {user.full_name}\n"
+        f"🏢 Отдел: {user.department_no}\n\n"
+        f"Подтвердить регистрацию?"
+    )
+
+    await bot.send_message(rop_id, text, reply_markup=kb, parse_mode="Markdown")
+
+
+# --- обработчики кнопок ---
+
+@router.callback_query(F.data.startswith("approve_user_"))
+async def approve_user(cb: CallbackQuery):
+    user_id = int(cb.data.split("_")[-1])
+    with session_scope() as s:
+        user = s.get(User, user_id)
+        if not user:
+            return await cb.answer("Пользователь не найден", show_alert=True)
+        user.is_active = True
+        user.is_approved = True
+        s.flush()
+        await cb.message.edit_text(
+            f"✅ Регистрация сотрудника {user.full_name} подтверждена"
+        )
+        logger.info(f"Регистрация сотрудника {user.telegram_id} подтверждена")
+        # уведомляем сотрудника
+        await cb.bot.send_message(
+            chat_id=user.telegram_id,
+            text="🎉 Ваша регистрация подтверждена. Теперь вам доступен функционал бота.",
+            reply_markup=menu_kb()
+        )
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("reject_user_"))
+async def reject_user(cb: CallbackQuery):
+    user_id = int(cb.data.split("_")[-1])
+    with session_scope() as s:
+        user = s.get(User, user_id)
+        if not user:
+            return await cb.answer("Пользователь не найден", show_alert=True)
+        user.is_active = False
+        user.is_approved = False
+        s.flush()
+        await cb.message.edit_text(
+            f"❌ Регистрация сотрудника {user.full_name} отклонена"
+        )
+        logger.info(f"Регистрация сотрудника {user.telegram_id} отклонена")
+        # уведомляем сотрудника
+        await cb.bot.send_message(
+            chat_id=user.telegram_id,
+            text="⚠️ Ваша регистрация отклонена. Обратитесь к руководителю отдела."
+        )
+    await cb.answer()
