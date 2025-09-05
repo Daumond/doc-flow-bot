@@ -44,7 +44,7 @@ class Notifier:
             f"Автор: {agent_name}\n\n"
             f"Просмотреть - /rop\n\n"
         )
-        return await self.notify_user(user_id, agent_name, text)
+        return await self.notify_user(user_id, text)
 
     async def notify_agent_application_returned(
         self,

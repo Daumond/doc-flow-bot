@@ -416,6 +416,14 @@ async def finish_upload(cb: CallbackQuery, state: FSMContext):
         # Загрузка на Яндекс.Диск
             if getattr(app, "yandex_folder", None):
                 ya.upload_file(app.yandex_folder, output_path, "protocol.docx")
+                # Получаем РОПа
+            rop = s.get(User, app.rop_id) if app.rop_id else None
+            if rop:
+                text = (
+                    f"📝 Новая заявка #{app.id} от агента: {app.agent_name}\n"
+                    f"Для просмотра и проверки используйте команду /rop"
+                )
+                await cb.message.bot.send_message(rop.telegram_id, text)
     except Exception as e:
         logger.error(f"Error in finish_upload: {e}")
 
