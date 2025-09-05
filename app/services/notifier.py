@@ -33,16 +33,18 @@ class Notifier:
 
     async def notify_rop_application_created(
         self,
+        user_id: int,
         agent_name: str,
         app_id: int
     ) -> bool:
         """Notify rop that a new application was created"""
-        logger.info(f"Notifying about new ROP application {app_id} from {agent_name}")
+        logger.info(f"Notifying about new ROP application {app_id}")
         text = (
-            f"📋 *Новая заявка #{app_id}*\n\n"
+            f"📋 Новая заявка #{app_id}\n\n"
             f"Автор: {agent_name}\n\n"
+            f"Просмотреть - /rop\n\n"
         )
-        return await self.notify_user(agent_name, text)
+        return await self.notify_user(user_id, agent_name, text)
 
     async def notify_agent_application_returned(
         self,
@@ -53,8 +55,8 @@ class Notifier:
         """Notify agent that their application was returned"""
         logger.info(f"Notifying agent {agent_id} about returned application {app_id}")
         text = (
-            f"⚠️ *Заявка #{app_id} возвращена на доработку*\n\n"
-            f"*Комментарий РОПа:* {comment}\n\n"
+            f"⚠️ Заявка #{app_id} возвращена на доработку\n\n"
+            f"Комментарий РОПа: {comment}\n\n"
             "Для продолжения работы с заявкой нажмите /my_applications"
         )
         return await self.notify_user(agent_id, text)
@@ -68,8 +70,8 @@ class Notifier:
         """Notify agent about a new task from lawyer"""
         logger.info(f"Notifying agent {agent_id} about new task for application {app_id}")
         text = (
-            f"📋 *Новая задача от юриста по заявке #{app_id}*\n\n"
-            f"*Задача:* {task_text}\n\n"
+            f"📋 Новая задача от юриста по заявке #{app_id}\n\n"
+            f"Задача: {task_text}\n\n"
             "Для загрузки дополнительных документов нажмите /my_applications"
         )
         return await self.notify_user(agent_id, text)
@@ -82,7 +84,7 @@ class Notifier:
         """Notify agent that their application was approved"""
         logger.info(f"Notifying agent {agent_id} about approved application {app_id}")
         text = (
-            f"✅ *Заявка #{app_id} одобрена*\n\n"
+            f"✅ Заявка #{app_id} одобрена\n\n"
             "Заявка передана юристу на проверку. "
             "Вы получите уведомление о дальнейших действиях."
         )
@@ -96,7 +98,6 @@ class Notifier:
         """Notify agent that their application was closed"""
         logger.info(f"Notifying agent {agent_id} about closed application {app_id}")
         text = (
-            f"🏁 *Сделка по заявке #{app_id} закрыта*\n\n"
-            "Спасибо за работу!"
+            f"🏁 Сделка по заявке #{app_id} закрыта\n\n"
         )
         return await self.notify_user(agent_id, text)

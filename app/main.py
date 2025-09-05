@@ -37,6 +37,7 @@ async def main():
         
         # Include routers
         logger.info("Setting up routers...")
+        dp.include_router(common_router)
         # Базовый middleware для защиты всех хендлеров
         dp.message.middleware(AccessGuard())
         dp.callback_query.middleware(AccessGuard())
@@ -49,7 +50,7 @@ async def main():
         lawyer_router.message.middleware(RoleMiddleware([UserRole.lawyer]))
         lawyer_router.callback_query.middleware(RoleMiddleware([UserRole.lawyer]))
 
-        dp.include_router(common_router)
+
         dp.include_router(agent_router)
         dp.include_router(rop_router)
         dp.include_router(lawyer_router)

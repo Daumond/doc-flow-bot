@@ -15,7 +15,6 @@ def create_folder(folder_name: str) -> str:
     resp = requests.put(url, headers=HEADERS, params=params)
     if resp.status_code not in (201, 409):  # 201 — создано, 409 — уже существует
         raise Exception(f"Ошибка создания папки: {resp.status_code} {resp.text}")
-    print(f"Папка {folder_name} создана")
     return folder_name
 
 def upload_file(folder_path: str, local_path: str, filename: str) -> None:

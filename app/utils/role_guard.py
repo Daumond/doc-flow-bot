@@ -19,9 +19,9 @@ class AccessGuard(BaseMiddleware):
             if txt.startswith("/start"):
                 return await handler(event, data)
             # Блокируем всё остальное, если нет прав
-            if not user or not user.is_active or not user.is_approved:
+            if user and (not user.is_active or not user.is_approved):
                 await event.answer("Доступ ограничен. Обратитесь к РОПу для подтверждения регистрации.")
-                logger.warning(f"Access denied for user {tg_id} in {handler}")
+                logger.warning(f"Access denied for user {tg_id}. Need ROP")
                 return
         return await handler(event, data)
 
@@ -52,7 +52,7 @@ class RoleMiddleware(BaseMiddleware):
             if user.role not in self.allowed_roles:
                 if hasattr(event, "answer"):
                     await event.answer("⛔ У вас нет доступа к этой команде.")
-                    logger.warning(f"Higher access denied for user {tg_id} in {handler}")
+                    logger.warning(f"Higher access denied for user {tg_id}")
                 return
 
         # передаем user в data, чтобы хендлер мог его использовать

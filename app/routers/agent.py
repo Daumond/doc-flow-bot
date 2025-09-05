@@ -3,7 +3,7 @@ from aiogram.types import Message, CallbackQuery, FSInputFile, ReplyKeyboardRemo
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from app.db.models import Application, ApplicationStatus, QuestionnaireAnswer, Document, User, Task
+from app.db.models import Application, ApplicationStatus, QuestionnaireAnswer, Document, User, Task, UserRole
 from app.db.repository import session_scope
 from app.keyboards.common import doc_type_kb, deal_type_kb, object_type_kb, review_kb
 from app.services import yandex_disk as ya, notifier
@@ -12,7 +12,7 @@ from app.services.protocol_filler import fill_protocol
 from pathlib import Path
 import hashlib
 import json
-import datetime
+from datetime import datetime
 import logging
 
 from app.config.logging_config import get_logger
@@ -101,9 +101,14 @@ async def protocol_date_handler(message: Message, state: FSMContext):
     """Handle protocol date input"""
     logger.debug(f"Protocol date input: {message.text}")
     try:
-        await state.update_data(protocol_date=message.text.strip())
-        await state.set_state(CreateDeal.address)
-        await message.answer("Адрес объекта:")
+        try:
+            date = datetime.strptime(message.text.strip(), "%d.%m.%Y")
+            await state.update_data(protocol_date=message.text.strip())
+            await state.set_state(CreateDeal.address)
+            await message.answer("Адрес объекта:")
+        except ValueError:
+            logger.warning(f"Неверный формат даты: {message.text.strip()}")
+            await message.answer("Неверный формат. Введите дату в формате ДД.ММ.ГГГГ:")
     except Exception as e:
         logger.error(f"Error in protocol_date_handler: {e}")
         await message.answer("Ошибка при обработке даты протокола. Пожалуйста, попробуйте снова.")
@@ -126,8 +131,16 @@ async def object_type_handler(message: Message, state: FSMContext):
     logger.debug(f"Object type selected: {message.text}")
     try:
         await state.update_data(object_type=message.text.strip())
-        await state.set_state(CreateDeal.head_name)
-        await message.answer("ФИО руководителя:", reply_markup=ReplyKeyboardRemove())
+        await state.set_state(CreateDeal.review)
+        data = await state.get_data()
+        await message.answer(f"Проверьте правильность введённых данных:"
+                             f"\nТип сделки: {data['deal_type']}"
+                             f"\nНомер договора: {data['contract_no']}"
+                             f"\nДата подачи протокола: {data['protocol_date']}"
+                             f"\nАдрес объекта: {data['address']}"
+                             f"\nТип объекта: {data['object_type']}",
+                             # f"\nФИО руководителя: {data['head_name']}",
+                             reply_markup=review_kb())
     except Exception as e:
         logger.error(f"Error in object_type_handler: {e}")
         await message.answer("Ошибка при обработке типа объекта. Пожалуйста, попробуйте снова.")
@@ -136,23 +149,13 @@ async def object_type_handler(message: Message, state: FSMContext):
 async def head_name_handler(message: Message, state: FSMContext):
     """Handle head name input"""
     logger.debug(f"Head name input: {message.text}")
-    try:
-        await state.update_data(head_name=message.text.strip())
-        await state.set_state(CreateDeal.review)
-        data = await state.get_data()
-        await message.answer(f"Проверьте правильность введённых данных:"
-                             f"\nТип сделки: {data['deal_type']}"
-                             f"\nНомер договора: {data['contract_no']}"
-                             f"\nДата подачи протокола: {data['protocol_date']}"
-                             f"\nАдрес объекта: {data['address']}"
-                             f"\nТип объекта: {data['object_type']}"
-                             f"\nФИО руководителя: {data['head_name']}", reply_markup=review_kb())
-    except Exception as e:
-        logger.error(f"Error in head_name_handler: {e}")
-        await message.answer("Ошибка при обработке ФИО руководителя. Пожалуйста, попробуйте снова.")
+
+    #except Exception as e:
+       # logger.error(f"Error in head_name_handler: {e}")
+       # await message.answer("Ошибка при обработке ФИО руководителя. Пожалуйста, попробуйте снова.")
 
 @router.message(CreateDeal.review)
-async def agent_name_handler(message: Message, state: FSMContext):
+async def review_info_handler(message: Message, state: FSMContext):
     """Handle review and agent name input"""
     logger.debug(f"Review and agent name input: {message.text}")
     try:
@@ -169,20 +172,36 @@ async def agent_name_handler(message: Message, state: FSMContext):
         with session_scope() as s:
             agent = s.query(User).filter(User.telegram_id == message.from_user.id).first()
             # TODO временный костыль на несколько юзеров
-            responsible = s.query(User).filter(User.telegram_id == message.from_user.id).first()
+
+            rop = s.query(User).filter(
+                User.role == UserRole.rop,
+                User.department_no == agent.department_no,
+                User.is_active == True,
+                User.is_approved == True
+            ).first() or None
+
+
+            lawyer = s.query(User).filter(
+                User.role == UserRole.lawyer,
+                User.department_no == agent.department_no,
+                User.is_active == True,
+                User.is_approved == True
+            ).first() or None
+
+
             app = Application(
                 deal_type=data["deal_type"],
                 contract_no=data.get("contract_no"),
                 protocol_date=data.get("protocol_date"),
                 address=data.get("address"),
                 object_type=data.get("object_type"),
-                head_name=data.get("head_name"),
+                head_name=rop.full_name,
                 agent_name=agent.full_name,
                 status=ApplicationStatus.created,
                 yandex_folder=yadisk_path,
-                agent_id=agent.id,
-                rop_id=responsible.id,
-                lawyer_id=responsible.id
+                agent_id=agent.id if agent else None,
+                rop_id=rop.id if rop else 1,
+                lawyer_id=lawyer.id if lawyer else 1
             )
             s.add(app)
             s.flush()  # получаем app.id

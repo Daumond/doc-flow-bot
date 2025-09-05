@@ -77,7 +77,7 @@ async def reg_department(message: Message, state: FSMContext):
             s.flush()  # получаем user.id
 
             # Ищем РОПа для отдела
-            rop_tg = s.query(User).filter(
+            rop = s.query(User).filter(
                 User.role == UserRole.rop,
                 User.department_no == dep,
                 User.is_active == True,
@@ -85,18 +85,18 @@ async def reg_department(message: Message, state: FSMContext):
             ).first()
 
         # Уведомление РОПа (если есть)
-        if rop_tg:
-            await notify_rop_about_registration(message.bot, rop_tg.telegram_id, user)
-        else:
-            logger.warning(f"Не найден активный РОП для отдела {dep}")
+            if rop:
+                await notify_rop_about_registration(message.bot, rop.telegram_id, user)
+            else:
+                logger.warning(f"Не найден активный РОП для отдела {dep}")
 
-        await state.clear()
-        await message.answer(
+            await state.clear()
+            await message.answer(
             "Заявка на регистрацию отправлена РОПу указанного отдела. "
             "Ожидайте подтверждения.",
             reply_markup=ReplyKeyboardRemove()
         )
-        logger.info(f"User {message.from_user.id} registered, notification sent to ROP")
+            logger.info(f"User {message.from_user.id} registered, notification sent to ROP")
     except Exception as e:
         logger.error(f"Error in reg_department for user {message.from_user.id}: {str(e)}")
         await message.answer("Произошла ошибка. Пожалуйста, попробуйте позже.")
